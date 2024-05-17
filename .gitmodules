@@ -1,0 +1,3 @@
+[submodule "Paratranz_Util_Cache"]
+	path = Debug
+	url = https://github.com/LocalizeLimbusCompany/Paratranz_Util_Cache
