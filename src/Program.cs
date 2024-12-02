@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,45 +12,38 @@ public static class Program
     private static string _localizePath;
     private static string _paratranzWrokPath;
     private static int _localizePathLength;
-    public static Dictionary<string, JsonObject> CnDic = [];
-    public static Dictionary<string, JsonObject> EnDic = [];
-    public static Dictionary<string, JsonObject> JpDic = [];
-    public static Dictionary<string, JsonObject> KrDic = [];
+    private static int _paratranzWrokPathLength;
 
-#if !DEBUG
     private static readonly Logger Logger = new("./Error.txt");
+    public static Dictionary<string, JsonObject> CnDic = [];
+    public static Dictionary<string, JsonObject> KrDic = [];
+    public static Dictionary<string, JsonArray> PtDic = [];
 
     public static void Main(string[] args)
     {
+#if !DEBUG
         AppDomain.CurrentDomain.UnhandledException += (o, e) => { Logger.Log(o + e.ToString()); };
         try
         {
-            _localizePath = new DirectoryInfo(File.ReadAllLines("./LLC_GitHubWrokLocalize_Path.txt")[0]).FullName;
-            _paratranzWrokPath = new DirectoryInfo("./Localize").FullName;
-#else
-    public static void Main(string[] args)
-    {
-            _localizePath = new DirectoryInfo(File.ReadAllLines("./LLC_GitHubWrokLocalize_Path.txt")[0]).FullName;
-            _paratranzWrokPath = new DirectoryInfo("./Localize").FullName;
 #endif
+            _localizePath = new DirectoryInfo(File.ReadAllLines("./LLC_GitHubWrokLocalize_Path.txt")[0]).FullName;
             _localizePathLength = _localizePath.Length + 3;
+            _paratranzWrokPath = new DirectoryInfo("./utf8/Localize").FullName;
+            _paratranzWrokPathLength = _paratranzWrokPath.Length;
             LoadGitHubWroks(new DirectoryInfo(_localizePath + "/KR"), KrDic);
-            LoadGitHubWroks(new DirectoryInfo(_localizePath + "/JP"), JpDic);
-            LoadGitHubWroks(new DirectoryInfo(_localizePath + "/EN"), EnDic);
             var rawNickNameObj = Json.Parse(File.ReadAllText(_localizePath + "/NickName.json")).AsObject;
             CnDic["/RawNickName.json"] = rawNickNameObj;
-            var nickNameObj = Json.Parse(File.ReadAllText(_localizePath + "/CN/NickName.json")).AsObject;
-            CnDic["/NickName.json"] = nickNameObj;
+            var readmeObj = Json.Parse(File.ReadAllText(_localizePath + "/Readme/Readme.json")).AsObject;
+            CnDic["/Readme/Readme.json"] = readmeObj;
 
-            ToParatranzWrok();
-
+            LoadParatranzWroks(new DirectoryInfo(_paratranzWrokPath), PtDic);
+            ToGitHubWrok();
 #if !DEBUG
         }
         catch (Exception ex)
         {
             Logger.Log(ex.ToString());
         }
-
         Logger.StopLogging();
 #endif
     }
@@ -68,184 +61,99 @@ public static class Program
             LoadGitHubWroks(directoryInfo, dic);
     }
 
-    public static void ToParatranzWrokNickName()
+    public static void LoadParatranzWroks(DirectoryInfo directory, Dictionary<string, JsonArray> dic)
     {
-        var rawNickNames = CnDic["/RawNickName.json"][0].AsArray;
-        JsonArray ptNickName = new();
-        foreach (var rnnobj in rawNickNames.List.Cast<JsonObject>())
+        foreach (var fileInfo in directory.GetFiles())
         {
-            var nameKey = rnnobj[0].Value;
-            var kr2Has = rnnobj.Dict.TryGetValue("nickName", out var krnickName);
-            var enhas = rnnobj.Dict.TryGetValue("enname", out var enname);
-            var en2Has = rnnobj.Dict.TryGetValue("enNickName", out var ennickName);
-            var jphas = rnnobj.Dict.TryGetValue("jpname", out var jpname);
-            var jp2Has = rnnobj.Dict.TryGetValue("jpNickName", out var jpnickName);
-
-            JsonObject krnameobj = new()
-            {
-                Dict =
-                {
-                    ["key"] = nameKey + "-krname",
-                    ["original"] = nameKey,
-                    ["context"] = "EN :\n" + (enhas ? enname.Value : string.Empty) + "\nJP :\n" +
-                                  (jphas ? jpname.Value : string.Empty)
-                }
-            };
-            ptNickName.Add(krnameobj);
-            if (!kr2Has || string.IsNullOrEmpty(krnickName)) continue;
-            JsonObject nickNameobj = new()
-            {
-                Dict =
-                {
-                    ["key"] = nameKey + "-nickName",
-                    ["original"] = krnickName,
-                    ["context"] = "EN :\n" + (en2Has ? ennickName.Value : string.Empty) + "\nJP :\n" +
-                                  (jp2Has ? jpnickName.Value : string.Empty)
-                }
-            };
-            ptNickName.Add(nickNameobj);
+            var value = File.ReadAllText(fileInfo.FullName);
+            var fileName = fileInfo.DirectoryName!.Remove(0, _paratranzWrokPathLength) + "/" + fileInfo.Name;
+            dic[fileName] = Json.Parse(value).AsArray;
         }
 
-        File.WriteAllText(_paratranzWrokPath + "/NickName.json", ptNickName.ToString(2));
+        foreach (var directoryInfo in directory.GetDirectories())
+            LoadParatranzWroks(directoryInfo, dic);
     }
 
-    public static Dictionary<TKey, TElement> ToDictionaryEx<TSource, TKey, TElement>(
-        this IEnumerable<TSource> source,
-        Func<TSource, TKey> keySelector,
-        Func<TSource, TElement> elementSelector)
+    public static void ToGitHubWrok()
     {
-        var dictionary = new Dictionary<TKey, TElement>();
-        foreach (var item in source)
-            dictionary[keySelector(item)] = elementSelector(item);
-        return dictionary;
-    }
-
-    public static void ToParatranzWrokNone(Dictionary<string, JsonObject> NickNames)
-    {
-        foreach (var (krkey, kr) in KrDic)
+        if (Directory.Exists(_localizePath + "/CN"))
+            Directory.Delete(_localizePath + "/CN", true);
+        Directory.CreateDirectory(_localizePath + "/CN");
+        KrDic["/NickName.json"] = CnDic["/RawNickName.json"];
+        foreach (var ptKvs in PtDic)
         {
-            var isStory = krkey.StartsWith("\\StoryData");
-            var en = EnDic.GetValueOrDefault(krkey, kr);
-            var jp = JpDic.GetValueOrDefault(krkey, kr);
-            JsonArray paratranzWrok = new();
-            if (kr.Count == 0)
-                continue;
+            var pt = ptKvs.Value.List.ToDictionary(key => key[0].Value, value => value.AsObject);
+            if (!KrDic.TryGetValue(ptKvs.Key, out var kr)) continue;
             var krobjs = kr[0].AsArray;
-            if (krobjs[0].AsObject.Dict.Count == 0)
-                continue;
-            Dictionary<string, JsonObject> endic = null;
-            Dictionary<string, JsonObject> jpdic = null;
-            JsonArray enobjs = null;
-            JsonArray jpobjs = null;
-            if (isStory)
-            {
-                enobjs = en[0].AsArray;
-                jpobjs = jp[0].AsArray;
-            }
-            else
-            {
-                try
-                {
-                    endic = en[0].AsArray.List.ToDictionaryEx(key => key[0].Value, value => value.AsObject);
-                    jpdic = jp[0].AsArray.List.ToDictionaryEx(key => key[0].Value, value => value.AsObject);
-                }
-                catch
-                {
-                    endic = kr[0].AsArray.List.ToDictionaryEx(key => key[0].Value, value => value.AsObject);
-                    jpdic = endic;
-                }
-            }
-
             for (var i = 0; i < krobjs.Count; i++)
             {
                 var krobj = krobjs[i].AsObject;
                 string objectId = krobj[0];
-                JsonObject enobj;
-                JsonObject jpobj;
-                if (krobj.Count < 1)
-                    continue;
-                if (isStory)
+                foreach (var keyValue in krobj.Dict.ToArray())
                 {
-                    if (objectId == "-1")
-                        continue;
-                    enobj = enobjs[i].AsObject;
-                    jpobj = jpobjs[i].AsObject;
-                }
-                else
-                {
-                    enobj = endic.GetValueOrDefault(objectId, krobj);
-                    jpobj = jpdic.GetValueOrDefault(objectId, krobj);
-                }
-
-                foreach (var keyValue in krobj.Dict)
-                {
-                    if (keyValue.Value.IsNumber) continue;
-                    JsonObject paratranzObject = new()
+                    if (keyValue.Value.IsNumber || keyValue.Key == "id" || keyValue.Key == "model" ||
+                        keyValue.Key == "usage") continue;
+                    if (keyValue.Value.IsString)
                     {
-                        Dict =
-                        {
-                            ["key"] = objectId + "-" + keyValue.Key
-                        }
-                    };
-                    if (keyValue.Key == "model")
-                    {
-                        if (NickNames.TryGetValue(keyValue.Value.Value, out var nickName))
-                        {
-                            paratranzObject.Dict["original"] = nickName[0];
-                            paratranzObject.Dict["translation"] = nickName[1];
-                            paratranzObject.Dict["context"] =
-                                "这是当前说话人物的默认名称,仅供参考\nEN :\n" + nickName[3] + "\nJP :\n" + nickName[2];
-                        }
-                        else
-                        {
-                            paratranzObject.Dict["original"] = keyValue.Value.Value;
-                            paratranzObject.Dict["context"] =
-                                "这是当前说话人物的默认名称,仅供参考\n但是,令人震惊的是,此版本并没有相关翻译,请前往NickName条目查看相关内容";
-                        }
-
-                        paratranzWrok.Add(paratranzObject);
-                    }
-                    else if (keyValue.Key != "id" && keyValue.Key != "usage")
-                    {
-                        if (keyValue.Value.IsString)
-                        {
-                            string original = keyValue.Value;
-                            if (string.IsNullOrEmpty(original) || "-".Equals(original)) continue;
-
-                            paratranzObject.Dict["original"] = original;
-                            paratranzObject.Dict["context"] =
-                                $"EN :\n{enobj[keyValue.Key].Value}\nJP :\n{jpobj[keyValue.Key].Value}";
-                        }
-                        else if (keyValue.Value.IsArray)
-                        {
-                            var krps = GetJsonPaths(JArray.Parse(keyValue.Value.ToString()));
-                            var enps = GetJsonPaths(JArray.Parse(enobj[keyValue.Key].ToString()));
-                            var jpps = GetJsonPaths(JArray.Parse(jpobj[keyValue.Key].ToString()));
-
-                            foreach (var paratranzObject1 in krps.Select(item => new JsonObject
-                                     {
-                                         Dict =
-                                         {
-                                             ["key"] = objectId + "-" + keyValue.Key + item.Key,
-                                             ["original"] = item.Value.ToString(),
-                                             ["context"] = $"EN :\n{enps[item.Key]}\nJP :\n{jpps[item.Key]}"
-                                         }
-                                     }))
-                                paratranzWrok.Add(paratranzObject1);
+                        if (!pt.TryGetValue(objectId + "-" + keyValue.Key, out var ptobj) ||
+                            !ptobj.Dict.TryGetValue("translation", out var translation) ||
+                            string.IsNullOrEmpty(translation))
                             continue;
+                        krobj[keyValue.Key].Value = translation.Value.Replace("\\n", "\n");
+                    }
+                    else if (keyValue.Value.IsArray)
+                    {
+                        var token = JArray.Parse(keyValue.Value.ToString());
+                        var jps = GetJsonPaths(token);
+                        foreach (var item in jps)
+                        {
+                            if (!pt.TryGetValue(objectId + "-" + keyValue.Key + item.Key, out var ptobj) ||
+                                !ptobj.Dict.TryGetValue("translation", out var translation) ||
+                                string.IsNullOrEmpty(translation))
+                                continue;
+                            item.Value.Replace(translation.Value.Replace("\\n", "\n"));
                         }
 
-                        paratranzWrok.Add(paratranzObject);
+                        krobj.Dict[keyValue.Key] = Json.Parse(token.ToString());
                     }
                 }
             }
 
-            var filePath = _paratranzWrokPath + krkey;
+            var krjson = kr.ToString();
+            var filePath = _localizePath + "/CN" + ptKvs.Key;
             var directoryPath = Path.GetDirectoryName(filePath);
             if (!Directory.Exists(directoryPath))
-                Directory.CreateDirectory(directoryPath);
-            File.WriteAllText(filePath, paratranzWrok.ToString(2));
+                Directory.CreateDirectory(directoryPath!);
+            File.WriteAllText(filePath, JObject.Parse(krjson).ToString());
         }
+
+        var special = PtDic["/Special.json"].List.ToDictionary(key => key[0].Value, value => value.AsObject);
+
+        var changelog = special["更新记录"]["translation"].Value;
+        var parent = new DirectoryInfo(_localizePath).Parent!.FullName;
+        File.WriteAllText(parent + "/CHANGELOG.md", changelog.Replace("\\n", "\r\n"));
+        var readmeObj = CnDic["/Readme/Readme.json"];
+        var noticeList = readmeObj[0].AsArray;
+        var ver = changelog.AsSpan(3, changelog.IndexOf("\\n", StringComparison.Ordinal) - 3);
+        var llcMod = File.ReadAllText(parent + "/src/LLCMod.cs");
+        var startIndex = llcMod.IndexOf("Version = \"", StringComparison.Ordinal);
+        var endIndex = llcMod.IndexOf('"', startIndex + 11);
+        llcMod = llcMod.Remove(startIndex + 11, endIndex - startIndex - 11).Insert(startIndex + 11, ver.ToString());
+        File.WriteAllText(parent + "/src/LLCMod.cs", llcMod);
+        var readmeVer = string.Concat("Mod V", ver);
+        var notice = noticeList[^2].AsObject;
+        if (!notice[6].Value.Equals(readmeVer))
+        {
+            noticeList[^1] = noticeList[^2].Clone();
+            notice[0].AsInt += 1;
+            notice[3] = DateTime.Now.ToString("yyyy-MM-dd") + "T00:00:00.000Z";
+            notice[6] = readmeVer;
+        }
+
+        notice[7] = "{\"list\":[{\"formatKey\":\"Text\",\"formatValue\":\"" + changelog + "\"}]}";
+        File.WriteAllText(_localizePath + "/Readme/Readme.json", readmeObj.ToString(2));
+        File.WriteAllText(_localizePath + "/Readme/LoadingTexts.md",
+            special["Loading"]["translation"].Value.Replace("\\n", "\r\n"));
     }
 
     public static Dictionary<string, JToken> GetJsonPaths(JToken token, string currentPath = "$")
@@ -286,16 +194,5 @@ public static class Program
             JTokenType.String => token.ToString() == string.Empty,
             _ => !token.HasValues
         };
-    }
-
-    public static void ToParatranzWrok()
-    {
-        if (Directory.Exists(_paratranzWrokPath))
-            Directory.Delete(_paratranzWrokPath, true);
-        Directory.CreateDirectory(_paratranzWrokPath);
-
-        ToParatranzWrokNickName();
-        ToParatranzWrokNone(CnDic["/NickName.json"][0].AsArray.List
-            .ToDictionary(key => key[0].Value, value => value.AsObject));
     }
 }

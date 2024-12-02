@@ -11,14 +11,25 @@
         <DebugType>embedded</DebugType>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
         <DebugSymbols>true</DebugSymbols>
-        <Optimize>false</Optimize>
+        <OutputPath>..\Debug2\</OutputPath>
+        <DebugType>full</DebugType>
     </PropertyGroup>
-    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+        <OutputPath>..\Release\</OutputPath>
         <Optimize>true</Optimize>
+        <DebugType>pdbonly</DebugType>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
+        <Reference Include="Newtonsoft.Json">
+            <HintPath>..\Debug2\Newtonsoft.Json.dll</HintPath>
+        </Reference>
     </ItemGroup>
+    <Target Name="CopyFile" AfterTargets="build">
+        <Message Text="Copying Release files..." Importance="high" Condition="'$(Configuration)' == 'Release'"/>
+        <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(OutputPath)..\..\LLT_Para_To_Git\lib" Condition="'$(Configuration)' == 'Release'"/>
+        <Copy SourceFiles="$(OutputPath)$(AssemblyName).exe" DestinationFolder="$(OutputPath)..\..\LLT_Para_To_Git\lib" Condition="'$(Configuration)' == 'Release'"/>
+    </Target>
 </Project>
